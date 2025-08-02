@@ -89,6 +89,42 @@ class TestChargePoint(ChargePoint):
         logger.info("Received Reset request")
         return call_result.Reset(status="Accepted")
 
+    @on(Action.change_configuration)
+    def on_change_configuration(self, key, value, **kwargs):
+        """Handle configuration change requests."""
+        logger.info(f"Received ChangeConfiguration request: {key} = {value}")
+        return call_result.ChangeConfiguration(status="Accepted")
+
+    @on(Action.heartbeat)
+    async def on_heartbeat(self):
+        """Handle heartbeat requests."""
+        logger.info("Received heartbeat request")
+        return call_result.HeartbeatPayload(current_time=datetime.utcnow().isoformat())
+
+    @on(Action.trigger_message)
+    async def on_trigger_message(self, **kwargs):
+        """Handle trigger message requests."""
+        requested_message = kwargs.get("requested_message")
+        connector_id = kwargs.get("connector_id", 0)
+        logger.info(
+            f"Received TriggerMessage request: {requested_message} for connector {connector_id}"
+        )
+
+        if requested_message == "StatusNotification":
+            # Send status notification for the requested connector
+            status_notification = call.StatusNotification(
+                connector_id=connector_id,
+                error_code=ChargePointErrorCode.no_error,
+                status=ChargePointStatus.available,
+                timestamp=datetime.utcnow().isoformat(),
+                info="",
+                vendor_id="",
+                vendor_error_code="",
+            )
+            await self.call(status_notification)
+
+        return call_result.TriggerMessagePayload(status="Accepted")
+
     async def send_status_notification(
         self,
         connector_id: int = 1,
