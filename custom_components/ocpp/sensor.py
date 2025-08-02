@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import homeassistant
 from homeassistant.components.sensor import (
@@ -42,6 +42,9 @@ class OcppSensorDescription(SensorEntityDescription):
     """Class to describe a Sensor entity."""
 
     metric: str | None = None
+    key: str | None = None
+    name: str | None = None
+    entity_category: EntityCategory | None = None
 
 
 @dataclass
@@ -208,7 +211,7 @@ class TagEnergySensor(RestoreSensor, SensorEntity):
         self.async_schedule_update_ha_state(True)
 
 
-async def async_setup_entry(hass, entry, async_add_devices):
+async def async_setup_entry(hass, entry, async_add_entities):
     """Configure the sensor platform."""
     central_system = hass.data[DOMAIN][entry.entry_id]
     entities = []
@@ -291,9 +294,9 @@ async def async_setup_entry(hass, entry, async_add_devices):
             )
             entities.append(cpx)
 
-    _LOGGER.info(f"Calling async_add_devices with {len(entities)} entities")
-    await async_add_devices(entities, False)
-    _LOGGER.info("async_add_devices call completed")
+    _LOGGER.info(f"Calling async_add_entities with {len(entities)} entities")
+    async_add_entities(entities, False)
+    _LOGGER.info("async_add_entities call completed")
 
 
 class ChargePointMetric(RestoreSensor, SensorEntity):
