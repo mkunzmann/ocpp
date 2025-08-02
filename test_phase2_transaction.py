@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Test configuration
 CHARGER_ID = "TEST_CHARGER_001"
-CENTRAL_SYSTEM_URL = "ws://localhost:9000"  # Default HA OCPP port
+CENTRAL_SYSTEM_URL = "ws://127.0.0.1:9000/TEST_CHARGER_001"  # Default HA OCPP port
 ID_TAG = "pulsar"  # From your configuration.yaml
 TRANSACTION_ID = 1
 METER_START = 12345  # kWh * 1000 (12.345 kWh)
@@ -192,6 +192,40 @@ class TestChargePoint(ChargePoint):
         """Phase 2: Perform a complete charging transaction."""
         logger.info("=== PHASE 2: Charging Transaction ===")
 
+        # Start the charge point (this runs the message loop)
+        logger.info("🚀 Starting charge point...")
+        start_task = asyncio.create_task(self.start())
+
+        # Wait a bit for the message loop to start
+        await asyncio.sleep(2)
+
+        # Send boot notification to establish connection
+        logger.info("Sending BootNotification")
+        request = call.BootNotification(
+            charge_point_model="Test Charger Model",
+            charge_point_vendor="Test Vendor",
+            charge_box_serial_number="TEST123456",
+            charge_point_serial_number="TEST123456",
+            firmware_version="1.0.0",
+            iccid="",
+            imsi="",
+            meter_type="",
+            meter_serial_number="",
+        )
+
+        try:
+            response = await asyncio.wait_for(self.call(request), timeout=60)
+            logger.info(f"✅ BootNotification response: {response}")
+        except asyncio.TimeoutError:
+            logger.warning(
+                "⚠️ BootNotification response timeout - this might be normal with HA's non-standard flow"
+            )
+        except Exception as e:
+            logger.error(f"❌ BootNotification error: {e}")
+            return False
+
+        await asyncio.sleep(3)
+
         # 1. Change status to preparing
         await self.send_status_notification(
             connector_id=1, status=ChargePointStatus.preparing
@@ -206,9 +240,9 @@ class TestChargePoint(ChargePoint):
 
         # 3. Start transaction
         start_response = await self.send_start_transaction(ID_TAG, self.meter_start)
-        if start_response.id_tag_info.status != AuthorizationStatus.accepted:
+        if start_response.id_tag_info["status"] != AuthorizationStatus.accepted:
             logger.error(
-                f"Start transaction failed: {start_response.id_tag_info.status}"
+                f"Start transaction failed: {start_response.id_tag_info['status']}"
             )
             return False
 

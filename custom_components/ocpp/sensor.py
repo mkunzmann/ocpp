@@ -256,6 +256,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     central_system.tag_sensors = tag_sensors
     central_system.set_tag_sensors_for_all_charge_points(tag_sensors)
     _LOGGER.info(f"Stored tag sensors in central system: {list(tag_sensors.keys())}")
+    _LOGGER.info(f"Central system ID: {id(central_system)}")
+    _LOGGER.info(f"Central system type: {type(central_system)}")
 
     # setup all chargers added to config
     for charger in entry.data[CONF_CPIDS]:

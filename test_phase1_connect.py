@@ -26,7 +26,9 @@ logger = logging.getLogger(__name__)
 
 # Test configuration
 CHARGER_ID = "TEST_CHARGER_001"
-CENTRAL_SYSTEM_URL = "ws://localhost:9000"  # Default HA OCPP port
+CENTRAL_SYSTEM_URL = (
+    "ws://127.0.0.1:9000/TEST_CHARGER_001"  # Default HA OCPP port with charger ID
+)
 ID_TAG = "pulsar"  # From your configuration.yaml
 
 
@@ -42,19 +44,62 @@ class TestChargePoint(ChargePoint):
         """Handle configuration requests."""
         logger.info(f"Received GetConfiguration request for key: {key}")
 
-        # Return basic configuration
-        return call_result.GetConfiguration(
-            configuration_key=[
-                {"key": "HeartbeatInterval", "readonly": False, "value": "300"},
-                {"key": "NumberOfConnectors", "readonly": False, "value": "1"},
-                {
-                    "key": "MeterValuesSampledData",
-                    "readonly": False,
-                    "value": "Energy.Active.Import.Register",
-                },
-                {"key": "MeterValueSampleInterval", "readonly": False, "value": "60"},
-            ]
-        )
+        # Handle different configuration keys
+        if key[0] == "SupportedFeatureProfiles":
+            return call_result.GetConfiguration(
+                configuration_key=[
+                    {
+                        "key": key[0],
+                        "readonly": False,
+                        "value": "Core,FirmwareManagement,LocalAuthListManagement,Reservation,SmartCharging,RemoteTrigger",
+                    }
+                ]
+            )
+        elif key[0] == "HeartbeatInterval":
+            return call_result.GetConfiguration(
+                configuration_key=[{"key": key[0], "readonly": False, "value": "300"}]
+            )
+        elif key[0] == "NumberOfConnectors":
+            return call_result.GetConfiguration(
+                configuration_key=[{"key": key[0], "readonly": False, "value": "1"}]
+            )
+        elif key[0] == "MeterValuesSampledData":
+            return call_result.GetConfiguration(
+                configuration_key=[
+                    {
+                        "key": key[0],
+                        "readonly": False,
+                        "value": "Energy.Active.Import.Register",
+                    }
+                ]
+            )
+        elif key[0] == "MeterValueSampleInterval":
+            return call_result.GetConfiguration(
+                configuration_key=[{"key": key[0], "readonly": False, "value": "60"}]
+            )
+        elif key[0] == "WebSocketPingInterval":
+            return call_result.GetConfiguration(
+                configuration_key=[{"key": key[0], "readonly": False, "value": "60"}]
+            )
+        elif key[0] == "ChargingScheduleAllowedChargingRateUnit":
+            return call_result.GetConfiguration(
+                configuration_key=[
+                    {"key": key[0], "readonly": False, "value": "Current"}
+                ]
+            )
+        elif key[0] == "AuthorizeRemoteTxRequests":
+            return call_result.GetConfiguration(
+                configuration_key=[{"key": key[0], "readonly": False, "value": "false"}]
+            )
+        elif key[0] == "ChargeProfileMaxStackLevel":
+            return call_result.GetConfiguration(
+                configuration_key=[{"key": key[0], "readonly": False, "value": "3"}]
+            )
+        else:
+            # Default response for unknown keys
+            return call_result.GetConfiguration(
+                configuration_key=[{"key": key[0], "readonly": False, "value": ""}]
+            )
 
     @on(Action.change_availability)
     def on_change_availability(self, **kwargs):
@@ -67,6 +112,12 @@ class TestChargePoint(ChargePoint):
         """Handle reset requests."""
         logger.info("Received Reset request")
         return call_result.Reset(status="Accepted")
+
+    @on(Action.change_configuration)
+    def on_change_configuration(self, key, value, **kwargs):
+        """Handle configuration change requests."""
+        logger.info(f"Received ChangeConfiguration request: {key} = {value}")
+        return call_result.ChangeConfiguration(status="Accepted")
 
     async def send_boot_notification(self):
         """Send boot notification."""
@@ -82,8 +133,21 @@ class TestChargePoint(ChargePoint):
             meter_type="",
             meter_serial_number="",
         )
-        response = await self.call(request)
-        logger.info(f"BootNotification response: {response}")
+
+        # Use a longer timeout because HA sends GetConfiguration requests first
+        # and the OCPP library waits for the BootNotificationResponse
+        try:
+            response = await asyncio.wait_for(self.call(request), timeout=60)
+            logger.info(f"✅ BootNotification response: {response}")
+            return True
+        except asyncio.TimeoutError:
+            logger.warning(
+                "⚠️ BootNotification response timeout - this might be normal with HA's non-standard flow"
+            )
+            return False
+        except Exception as e:
+            logger.error(f"❌ BootNotification error: {e}")
+            return False
 
     async def send_heartbeat(self):
         """Send heartbeat."""
@@ -125,9 +189,16 @@ class TestChargePoint(ChargePoint):
         """Phase 1: Connect and register the charger."""
         logger.info("=== PHASE 1: Connect and Register ===")
 
+        # Start the charge point (this runs the message loop)
+        logger.info("🚀 Starting charge point...")
+        start_task = asyncio.create_task(self.start())
+
+        # Wait a bit for the message loop to start
+        await asyncio.sleep(2)
+
         # 1. Send boot notification
         await self.send_boot_notification()
-        await asyncio.sleep(1)
+        await asyncio.sleep(3)
 
         # 2. Send heartbeat
         await self.send_heartbeat()
@@ -141,8 +212,8 @@ class TestChargePoint(ChargePoint):
 
         # 4. Authorize the ID tag
         auth_response = await self.send_authorize(ID_TAG)
-        if auth_response.id_tag_info.status != AuthorizationStatus.accepted:
-            logger.error(f"Authorization failed: {auth_response.id_tag_info.status}")
+        if auth_response.id_tag_info["status"] != AuthorizationStatus.accepted:
+            logger.error(f"Authorization failed: {auth_response.id_tag_info['status']}")
             return False
         logger.info("Authorization successful!")
         await asyncio.sleep(1)

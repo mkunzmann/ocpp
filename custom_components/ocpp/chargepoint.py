@@ -506,15 +506,34 @@ class ChargePoint(cp):
         auth_list = config.get(CONF_AUTH_LIST, {})
         # search for the entry, based on the id_tag
         auth_status = None
-        for auth_entry in auth_list:
-            id_entry = auth_entry.get(CONF_ID_TAG, None)
-            if id_tag == id_entry:
-                # get the authorization status, use the default if not configured
-                auth_status = auth_entry.get(CONF_AUTH_STATUS, default_auth_status)
+
+        # Handle both list and dict formats
+        if isinstance(auth_list, dict):
+            # Dictionary format (id_tag -> auth_entry)
+            if id_tag in auth_list:
+                auth_entry = auth_list[id_tag]
                 _LOGGER.debug(
-                    f"id_tag='{id_tag}' found in auth_list, authorization_status='{auth_status}'"
+                    f"auth_entry type: {type(auth_entry)}, value: {auth_entry}"
                 )
-                break
+                if isinstance(auth_entry, dict):
+                    auth_status = auth_entry.get(CONF_AUTH_STATUS, default_auth_status)
+                    _LOGGER.debug(
+                        f"id_tag='{id_tag}' found in auth_list, authorization_status='{auth_status}'"
+                    )
+                else:
+                    _LOGGER.warning(f"auth_entry is not a dict: {auth_entry}")
+                    auth_status = default_auth_status
+        else:
+            # List format (legacy)
+            for auth_entry in auth_list:
+                id_entry = auth_entry.get(CONF_ID_TAG, None)
+                if id_tag == id_entry:
+                    # get the authorization status, use the default if not configured
+                    auth_status = auth_entry.get(CONF_AUTH_STATUS, default_auth_status)
+                    _LOGGER.debug(
+                        f"id_tag='{id_tag}' found in auth_list, authorization_status='{auth_status}'"
+                    )
+                    break
 
         if auth_status is None:
             auth_status = default_auth_status
@@ -741,6 +760,14 @@ class ChargePoint(cp):
 
     def start_session_tracking(self, id_tag: str, transaction_id: str):
         """Start tracking a charging session for an ID tag."""
+        _LOGGER.info(
+            f"start_session_tracking called for tag {id_tag}, transaction {transaction_id}"
+        )
+        _LOGGER.info(f"_tag_sensors: {self._tag_sensors}")
+        _LOGGER.info(
+            f"id_tag in _tag_sensors: {id_tag in self._tag_sensors if self._tag_sensors else False}"
+        )
+
         if self._tag_sensors and id_tag in self._tag_sensors:
             from .sensor import ChargingSession
 
@@ -755,6 +782,10 @@ class ChargePoint(cp):
             self._tag_sensors[id_tag].add_session(session)
             _LOGGER.info(
                 f"Started tracking session for tag {id_tag}, transaction {transaction_id}"
+            )
+        else:
+            _LOGGER.warning(
+                f"Tag sensors not available or tag {id_tag} not found in sensors"
             )
 
     def end_session_tracking(
