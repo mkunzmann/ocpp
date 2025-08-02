@@ -20,6 +20,7 @@ from ocpp.v16.enums import (
     ChargePointErrorCode,
     Measurand,
     UnitOfMeasure,
+    TriggerMessageStatus,
 )
 
 # Configure logging
@@ -124,7 +125,7 @@ class TestChargePoint(ChargePoint):
             # Don't await the call to avoid timeout issues
             asyncio.create_task(self.call(status_notification))
 
-        return call_result.TriggerMessagePayload(status="Accepted")
+        return call_result.TriggerMessage(TriggerMessageStatus.accepted)
 
     async def send_status_notification(
         self,
@@ -183,9 +184,7 @@ class TestChargePoint(ChargePoint):
                             "unit": UnitOfMeasure.wh,
                         },
                         {
-                            "value": str(
-                                int(energy_import * 1000)
-                            ),  # Convert kWh to Wh
+                            "value": str(energy_import),
                             "measurand": Measurand.energy_active_import_register,
                             "unit": UnitOfMeasure.kwh,
                         },

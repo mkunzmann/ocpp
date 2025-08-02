@@ -274,11 +274,76 @@ class CentralSystem:
             self.charge_points[cp_id] = charge_point
 
             # Pass tag sensors to the new charge point if available
+            _LOGGER.info(f"Checking tag sensors for charge point {cp_id}")
+            _LOGGER.info(
+                f"hasattr(self, 'tag_sensors'): {hasattr(self, 'tag_sensors')}"
+            )
+
+            # Try to get tag sensors from central system if not available
+            if not hasattr(self, "tag_sensors") or not self.tag_sensors:
+                _LOGGER.info(
+                    "Tag sensors not found in central system, checking hass.data"
+                )
+                _LOGGER.info(f"Central system ID: {id(self)}")
+                # Try to get tag sensors from hass.data
+                if (
+                    DOMAIN in self.hass.data
+                    and "converted_auth_list" in self.hass.data[DOMAIN]
+                ):
+                    auth_list = self.hass.data[DOMAIN]["converted_auth_list"]
+                    _LOGGER.info(
+                        f"Found auth list in hass.data: {list(auth_list.keys())}"
+                    )
+                    # Get the actual TagEnergySensor objects from the sensor platform
+                    # We need to find the sensor entities that were created
+                    sensor_entities = []
+                    entity_registry = self.hass.data.get("entity_registry")
+                    if entity_registry:
+                        for entity_id in entity_registry.entities:
+                            if entity_id.startswith("sensor.ocpp_tag_energy_"):
+                                sensor_entities.append(entity_id)
+                    _LOGGER.info(f"Found sensor entities: {sensor_entities}")
+
+                    # For now, create minimal tag sensor objects
+                    tag_sensors = {}
+                    for tag_id in auth_list.keys():
+                        tag_sensors[tag_id] = type(
+                            "TagSensor",
+                            (),
+                            {
+                                "tag_id": tag_id,
+                                "add_session": lambda self, session: _LOGGER.info(
+                                    f"Session added for {tag_id}: {session}"
+                                ),
+                                "update_session": lambda self,
+                                transaction_id,
+                                energy_kwh,
+                                duration_minutes: _LOGGER.info(
+                                    f"Session updated for {tag_id}: transaction={transaction_id}, energy={energy_kwh}kWh, duration={duration_minutes}min"
+                                ),
+                            },
+                        )()
+                    self.tag_sensors = tag_sensors
+                    _LOGGER.info(
+                        f"Created tag sensors from auth list: {list(tag_sensors.keys())}"
+                    )
+                else:
+                    _LOGGER.info("No auth list found in hass.data")
+
             if hasattr(self, "tag_sensors") and self.tag_sensors:
+                _LOGGER.info(f"self.tag_sensors: {self.tag_sensors}")
+                _LOGGER.info(
+                    f"self.tag_sensors is not None: {self.tag_sensors is not None}"
+                )
+                _LOGGER.info(
+                    f"len(self.tag_sensors) if dict: {len(self.tag_sensors) if isinstance(self.tag_sensors, dict) else 'not dict'}"
+                )
                 charge_point.set_tag_sensors(self.tag_sensors)
                 _LOGGER.info(
                     f"Tag sensors passed to charge point {cp_id}: {list(self.tag_sensors.keys())}"
                 )
+            else:
+                _LOGGER.warning(f"Tag sensors not available for charge point {cp_id}")
 
             self.connections += 1
             _LOGGER.info(
