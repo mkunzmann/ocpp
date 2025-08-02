@@ -116,12 +116,13 @@ class TestChargePoint(ChargePoint):
                 connector_id=connector_id,
                 error_code=ChargePointErrorCode.no_error,
                 status=ChargePointStatus.available,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
                 info="",
                 vendor_id="",
                 vendor_error_code="",
             )
-            await self.call(status_notification)
+            # Don't await the call to avoid timeout issues
+            asyncio.create_task(self.call(status_notification))
 
         return call_result.TriggerMessagePayload(status="Accepted")
 

@@ -95,20 +95,7 @@ class CentralSystem:
         """Instantiate instance of a CentralSystem."""
         self.hass = hass
         self.entry = entry
-
-        # Filter entry data to only include fields that CentralSystemSettings expects
-        from .const import CentralSystemSettings
-        import inspect
-
-        settings_fields = inspect.signature(
-            CentralSystemSettings.__init__
-        ).parameters.keys()
-        _LOGGER.info(f"CentralSystemSettings fields: {list(settings_fields)}")
-        _LOGGER.info(f"Entry data keys: {list(entry.data.keys())}")
-        filtered_data = {k: v for k, v in entry.data.items() if k in settings_fields}
-        _LOGGER.info(f"Filtered data keys: {list(filtered_data.keys())}")
-        _LOGGER.info(f"Filtered data cpids: {filtered_data.get('cpids', 'NOT_FOUND')}")
-        self.settings = CentralSystemSettings(**filtered_data)
+        self.settings = CentralSystemSettings(**entry.data)
         self.subprotocols = self.settings.subprotocols
         self._server = None
         self.id = self.settings.csid
@@ -261,61 +248,14 @@ class CentralSystem:
                     )
                     # discovery_info for flow
                     info = {"cp_id": cp_id, "entry": self.entry}
-                    result = await self.hass.config_entries.flow.async_init(
+                    _LOGGER.info(f"Starting discovery flow with info: {info}")
+                    await self.hass.config_entries.flow.async_init(
                         DOMAIN,
                         context={"source": SOURCE_INTEGRATION_DISCOVERY},
                         data=info,
                     )
-
-                    # Check if the discovery flow completed successfully
-                    if (
-                        result.get("type") == "abort"
-                        and result.get("reason") == "test_charger_configured"
-                    ):
-                        _LOGGER.info(
-                            f"Test charger {cp_id} configured, creating charge point"
-                        )
-                        # Get the updated config entry data directly
-                        updated_entry = self.hass.config_entries.async_get_entry(
-                            self.entry.entry_id
-                        )
-                        if updated_entry:
-                            # Update our settings with the new data
-                            from .const import CentralSystemSettings
-                            import inspect
-
-                            settings_fields = inspect.signature(
-                                CentralSystemSettings.__init__
-                            ).parameters.keys()
-                            filtered_data = {
-                                k: v
-                                for k, v in updated_entry.data.items()
-                                if k in settings_fields
-                            }
-                            self.settings = CentralSystemSettings(**filtered_data)
-                            _LOGGER.info(
-                                f"Updated settings with new cpids: {self.settings.cpids}"
-                            )
-                        # Continue with charge point creation
-                        # Re-check cpids after discovery flow updates the settings
-                        _LOGGER.info("Re-checking cpids after discovery flow")
-                        for cfg in self.settings.cpids:
-                            _LOGGER.info(f"Re-checking cfg: {cfg}")
-                            if cfg.get(cp_id):
-                                cp_settings = ChargerSystemSettings(
-                                    **list(cfg.values())[0]
-                                )
-                                _LOGGER.info(
-                                    f"Found cp_settings after discovery: {cp_settings.cpid}"
-                                )
-                                break
-                    else:
-                        # use return to wait for config entry to reload after discovery
-                        return
-
-                # Check if we have valid cp_settings before proceeding
-                if cp_settings is None:
-                    _LOGGER.error(f"No valid cp_settings found for {cp_id}")
+                    _LOGGER.info("Discovery flow completed, returning")
+                    # use return to wait for config entry to reload after discovery
                     return
 
                 self.cpids.update({cp_settings.cpid: cp_id})
@@ -331,27 +271,15 @@ class CentralSystem:
                 charge_point = ChargePointv16(
                     cp_id, websocket, self.hass, self.entry, self.settings, cp_settings
                 )
-
             self.charge_points[cp_id] = charge_point
 
             # Pass tag sensors to the new charge point if available
-            _LOGGER.info(
-                f"Central system has tag_sensors attribute: {hasattr(self, 'tag_sensors')}"
-            )
-            if hasattr(self, "tag_sensors"):
-                _LOGGER.info(f"Central system tag_sensors: {self.tag_sensors}")
-                if self.tag_sensors:
-                    charge_point.set_tag_sensors(self.tag_sensors)
-                    _LOGGER.info(
-                        f"Tag sensors passed to charge point {cp_id}: {list(self.tag_sensors.keys())}"
-                    )
-                else:
-                    _LOGGER.warning(f"Central system tag_sensors is empty or None")
-            else:
-                _LOGGER.warning(f"Central system does not have tag_sensors attribute")
+            if hasattr(self, "tag_sensors") and self.tag_sensors:
+                charge_point.set_tag_sensors(self.tag_sensors)
+                _LOGGER.info(
+                    f"Tag sensors passed to charge point {cp_id}: {list(self.tag_sensors.keys())}"
+                )
 
-            _LOGGER.info(f"Charge point {cp_id} created and added to charge_points")
-            _LOGGER.info(f"Total charge points: {len(self.charge_points)}")
             self.connections += 1
             _LOGGER.info(
                 f"Charger {cp_settings.cpid}:{cp_id} connected to {self.settings.host}:{self.settings.port}."

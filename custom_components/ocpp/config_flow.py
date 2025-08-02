@@ -1,6 +1,5 @@
 """Adds config flow for ocpp."""
 
-import logging
 from typing import Any
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -9,8 +8,6 @@ from homeassistant.config_entries import (
     CONN_CLASS_LOCAL_PUSH,
 )
 import voluptuous as vol
-
-_LOGGER = logging.getLogger(__name__)
 
 from .const import (
     CONF_CPID,
@@ -147,32 +144,6 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(self._cp_id)
         # Abort the flow if a config entry with the same unique ID exists
         self._abort_if_unique_id_configured()
-
-        # Auto-configure test chargers (for automated testing)
-        if self._cp_id.startswith("TEST_CHARGER_"):
-            _LOGGER.info(f"Auto-configuring test charger: {self._cp_id}")
-            # Use default configuration for test chargers
-            test_config = {
-                CONF_CPID: "charger",
-                CONF_MAX_CURRENT: 32,
-                CONF_MONITORED_VARIABLES_AUTOCONFIG: True,
-                CONF_METER_INTERVAL: 60,
-                CONF_IDLE_INTERVAL: 900,
-                CONF_SKIP_SCHEMA_VALIDATION: False,
-                CONF_FORCE_SMART_CHARGING: False,
-                CONF_MONITORED_VARIABLES: DEFAULT_MONITORED_VARIABLES,
-            }
-            self._data[CONF_CPIDS].append({self._cp_id: test_config})
-
-            # Update the config entry and allow the connection to continue
-            self.hass.config_entries.async_update_entry(
-                self._entry,
-                data=self._data,
-            )
-
-            # Return to allow the connection to continue
-            return self.async_abort(reason="test_charger_configured")
-
         return await self.async_step_cp_user()
 
     async def async_step_cp_user(
