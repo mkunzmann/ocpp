@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -19,6 +20,8 @@ from homeassistant.const import CONF_MONITORED_VARIABLES
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+
+_LOGGER = logging.getLogger(__name__)
 
 from .api import CentralSystem
 from .const import (
@@ -84,6 +87,10 @@ class TagEnergySensor(RestoreSensor, SensorEntity):
         self._attr_native_unit_of_measurement = "kWh"
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+        _LOGGER.info(
+            f"Initialized TagEnergySensor for tag {tag_id} with unique_id: {self._attr_unique_id}"
+        )
 
     @property
     def available(self) -> bool:
@@ -178,13 +185,22 @@ class TagEnergySensor(RestoreSensor, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
+        _LOGGER.info(
+            f"TagEnergySensor {self._attr_unique_id} being added to Home Assistant"
+        )
         await super().async_added_to_hass()
         if restored := await self.async_get_last_sensor_data():
             self._attr_native_value = restored.native_value
             self._attr_native_unit_of_measurement = restored.native_unit_of_measurement
+            _LOGGER.info(
+                f"Restored sensor data for {self._attr_unique_id}: {self._attr_native_value}"
+            )
 
         async_dispatcher_connect(
             self._hass, DATA_UPDATED, self._schedule_immediate_update
+        )
+        _LOGGER.info(
+            f"TagEnergySensor {self._attr_unique_id} successfully added to Home Assistant"
         )
 
     @callback
@@ -198,16 +214,45 @@ async def async_setup_entry(hass, entry, async_add_devices):
     entities = []
 
     # Create tag energy sensors for each authorized ID tag
-    auth_list = entry.data.get(CONF_AUTH_LIST, {})
+    # Check if we have a converted auth_list from hass.data
+    converted_auth_list = hass.data.get(DOMAIN, {}).get("converted_auth_list")
+    if converted_auth_list is not None:
+        auth_list = converted_auth_list
+        _LOGGER.info("Using converted auth list from hass.data")
+    else:
+        auth_list = entry.data.get(CONF_AUTH_LIST, {})
+        _LOGGER.info(f"Setting up sensors. Auth list: {auth_list}")
+        _LOGGER.info(f"Auth list type: {type(auth_list)}")
+        _LOGGER.info(f"Entry data keys: {list(entry.data.keys())}")
+
+        # Handle both list and dict formats for authorization_list
+        if isinstance(auth_list, list):
+            _LOGGER.info("Auth list is a list, converting to dict format")
+            auth_dict = {}
+            for item in auth_list:
+                if isinstance(item, dict) and "id_tag" in item:
+                    tag_id = item["id_tag"]
+                    auth_dict[tag_id] = item
+            auth_list = auth_dict
+            _LOGGER.info(f"Converted auth list to dict: {auth_list}")
+
+    _LOGGER.info(f"Auth list keys: {list(auth_list.keys())}")
+
     tag_sensors = {}
     for tag_id in auth_list.keys():
+        _LOGGER.info(f"Creating tag energy sensor for tag: {tag_id}")
         tag_sensor = TagEnergySensor(hass, central_system, tag_id)
         tag_sensors[tag_id] = tag_sensor
         entities.append(tag_sensor)
+        _LOGGER.info(f"Created sensor with unique_id: {tag_sensor._attr_unique_id}")
+
+    _LOGGER.info(f"Created {len(tag_sensors)} tag energy sensors")
+    _LOGGER.info(f"Total entities to add: {len(entities)}")
 
     # Store tag sensors in central system for access by charge points
     central_system.tag_sensors = tag_sensors
     central_system.set_tag_sensors_for_all_charge_points(tag_sensors)
+    _LOGGER.info(f"Stored tag sensors in central system: {list(tag_sensors.keys())}")
 
     # setup all chargers added to config
     for charger in entry.data[CONF_CPIDS]:
@@ -246,7 +291,9 @@ async def async_setup_entry(hass, entry, async_add_devices):
             )
             entities.append(cpx)
 
-    async_add_devices(entities, False)
+    _LOGGER.info(f"Calling async_add_devices with {len(entities)} entities")
+    await async_add_devices(entities, False)
+    _LOGGER.info("async_add_devices call completed")
 
 
 class ChargePointMetric(RestoreSensor, SensorEntity):

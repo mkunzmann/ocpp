@@ -95,7 +95,16 @@ class CentralSystem:
         """Instantiate instance of a CentralSystem."""
         self.hass = hass
         self.entry = entry
-        self.settings = CentralSystemSettings(**entry.data)
+
+        # Filter entry data to only include fields that CentralSystemSettings expects
+        from .const import CentralSystemSettings
+        import inspect
+
+        settings_fields = inspect.signature(
+            CentralSystemSettings.__init__
+        ).parameters.keys()
+        filtered_data = {k: v for k, v in entry.data.items() if k in settings_fields}
+        self.settings = CentralSystemSettings(**filtered_data)
         self.subprotocols = self.settings.subprotocols
         self._server = None
         self.id = self.settings.csid

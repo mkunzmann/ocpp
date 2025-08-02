@@ -68,7 +68,11 @@ AUTH_LIST_SCHEMA = vol.Schema(
         vol.Required(CONF_ID_TAG): cv.string,
         vol.Optional(CONF_NAME): cv.string,
         vol.Optional(CONF_AUTH_STATUS): cv.string,
-    }
+        vol.Optional(
+            "status"
+        ): cv.string,  # Allow 'status' as alternative to 'authorization_status'
+    },
+    extra=vol.ALLOW_EXTRA,  # Allow extra fields
 )
 
 CONFIG_SCHEMA = vol.Schema(
@@ -76,8 +80,9 @@ CONFIG_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_DEFAULT_AUTH_STATUS, default=AuthorizationStatus.accepted.value
         ): cv.string,
-        vol.Optional(CONF_AUTH_LIST, default={}): vol.Schema(
-            {cv.string: AUTH_LIST_SCHEMA}
+        vol.Optional(CONF_AUTH_LIST, default={}): vol.Any(
+            vol.Schema({cv.string: AUTH_LIST_SCHEMA}),
+            vol.All(cv.ensure_list, [AUTH_LIST_SCHEMA]),
         ),
     },
     extra=vol.ALLOW_EXTRA,
@@ -88,6 +93,20 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     """Read configuration from yaml."""
 
     ocpp_config = config.get(DOMAIN, {})
+
+    # Convert authorization list from list format to dict format if needed
+    if CONF_AUTH_LIST in ocpp_config:
+        auth_list = ocpp_config[CONF_AUTH_LIST]
+        if isinstance(auth_list, list):
+            _LOGGER.info("Converting authorization list from list to dict format")
+            auth_dict = {}
+            for item in auth_list:
+                if isinstance(item, dict) and CONF_ID_TAG in item:
+                    tag_id = item[CONF_ID_TAG]
+                    auth_dict[tag_id] = item
+            ocpp_config[CONF_AUTH_LIST] = auth_dict
+            _LOGGER.info(f"Converted auth list: {auth_dict}")
+
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
     hass.data[DOMAIN][CONFIG] = ocpp_config
@@ -127,8 +146,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     hass.data[DOMAIN][entry.entry_id] = central_sys
 
+    # Log configuration information and handle list-to-dict conversion if needed
+    # Get authorization_list from YAML config (hass.data) instead of config entry
+    yaml_config = hass.data.get(DOMAIN, {}).get(CONFIG, {})
+    _LOGGER.info(f"YAML config: {yaml_config}")
+    auth_list = yaml_config.get(CONF_AUTH_LIST, {})
+    _LOGGER.info(f"Auth list from YAML config: {auth_list}")
+    _LOGGER.info(f"Auth list type: {type(auth_list)}")
+
+    # Convert authorization list from list format to dict format if needed
+    if isinstance(auth_list, list):
+        _LOGGER.info(
+            "Converting authorization list from list to dict format in async_setup_entry"
+        )
+        auth_dict = {}
+        for item in auth_list:
+            if isinstance(item, dict) and CONF_ID_TAG in item:
+                tag_id = item[CONF_ID_TAG]
+                auth_dict[tag_id] = item
+        auth_list = auth_dict
+        _LOGGER.info(f"Converted auth list in async_setup_entry: {auth_dict}")
+
+    _LOGGER.info(f"OCPP Integration setup - Auth list: {auth_list}")
+    _LOGGER.info(f"Number of authorized tags: {len(auth_list)}")
+    _LOGGER.info(f"Authorized tag IDs: {list(auth_list.keys())}")
+
     if entry.data[CONF_CPIDS]:
+        _LOGGER.info(f"Setting up platforms: {PLATFORMS}")
+        # Store the converted auth_list in hass.data for the sensor setup to access
+        if DOMAIN not in hass.data:
+            hass.data[DOMAIN] = {}
+        hass.data[DOMAIN]["converted_auth_list"] = auth_list
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        _LOGGER.info("Platforms setup completed")
 
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
