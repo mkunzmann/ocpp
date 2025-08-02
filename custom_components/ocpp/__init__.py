@@ -171,14 +171,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     _LOGGER.info(f"Number of authorized tags: {len(auth_list)}")
     _LOGGER.info(f"Authorized tag IDs: {list(auth_list.keys())}")
 
-    if entry.data[CONF_CPIDS]:
-        _LOGGER.info(f"Setting up platforms: {PLATFORMS}")
-        # Store the converted auth_list in hass.data for the sensor setup to access
-        if DOMAIN not in hass.data:
-            hass.data[DOMAIN] = {}
-        hass.data[DOMAIN]["converted_auth_list"] = auth_list
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-        _LOGGER.info("Platforms setup completed")
+    _LOGGER.info(f"Entry data keys: {list(entry.data.keys())}")
+    _LOGGER.info(f"Entry data cpids: {entry.data.get(CONF_CPIDS, 'NOT_FOUND')}")
+
+    # Always set up platforms, even if cpids is empty
+    _LOGGER.info(f"Setting up platforms: {PLATFORMS}")
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = {}
+    hass.data[DOMAIN]["converted_auth_list"] = auth_list
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _LOGGER.info("Platforms setup completed")
 
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
