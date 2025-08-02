@@ -370,6 +370,11 @@ class CentralSystem:
             "identifiers": {(DOMAIN, self.id)},
         }
 
+    def set_tag_sensors_for_all_charge_points(self, tag_sensors: Dict):
+        """Set tag sensors for all charge points."""
+        for charge_point in self.charge_points.values():
+            charge_point.set_tag_sensors(tag_sensors)
+
     def check_charger_available(func):
         """Check charger is available before executing service with Decorator."""
 

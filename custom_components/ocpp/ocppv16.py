@@ -748,6 +748,10 @@ class ChargePoint(cp):
             self._metrics[cstat.stop_reason.value].value = ""
             self._metrics[csess.transaction_id.value].value = self.active_transaction_id
             self._metrics[csess.meter_start.value].value = int(meter_start) / 1000
+
+            # Start session tracking for this ID tag
+            self.start_session_tracking(id_tag, str(self.active_transaction_id))
+
             result = call_result.StartTransaction(
                 id_tag_info={om.status.value: AuthorizationStatus.accepted.value},
                 transaction_id=self.active_transaction_id,
@@ -770,13 +774,27 @@ class ChargePoint(cp):
             )
         self.active_transaction_id = 0
         self._metrics[cstat.stop_reason.value].value = kwargs.get(om.reason.name, None)
+
+        # Calculate session energy and duration
+        energy_kwh = 0.0
+        duration_minutes = 0
         if (
             self._metrics[csess.meter_start.value].value is not None
             and not self._charger_reports_session_energy
         ):
-            self._metrics[csess.session_energy.value].value = int(
-                meter_stop
-            ) / 1000 - float(self._metrics[csess.meter_start.value].value)
+            energy_kwh = int(meter_stop) / 1000 - float(
+                self._metrics[csess.meter_start.value].value
+            )
+            self._metrics[csess.session_energy.value].value = energy_kwh
+        else:
+            energy_kwh = self._metrics[csess.session_energy.value].value or 0.0
+
+        # Calculate duration from session time
+        duration_minutes = self._metrics[csess.session_time.value].value or 0
+
+        # End session tracking
+        self.end_session_tracking(str(transaction_id), energy_kwh, duration_minutes)
+
         if Measurand.current_import.value in self._metrics:
             self._metrics[Measurand.current_import.value].value = 0
         if Measurand.power_active_import.value in self._metrics:

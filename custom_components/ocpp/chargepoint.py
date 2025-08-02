@@ -3,12 +3,14 @@
 import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 import logging
 from math import sqrt
 import secrets
 import string
 import time
+from typing import Dict, Optional
 
 from homeassistant.components.persistent_notification import DOMAIN as PN_DOMAIN
 from homeassistant.config_entries import ConfigEntry
@@ -197,6 +199,10 @@ class ChargePoint(cp):
         self._metrics[cstat.reconnects.value].value = 0
         alphabet = string.ascii_uppercase + string.digits
         self._remote_id_tag = "".join(secrets.choice(alphabet) for i in range(20))
+
+        # Session tracking for ID tags
+        self._current_session: Optional[Dict] = None
+        self._tag_sensors: Optional[Dict] = None
 
     async def get_number_of_connectors(self) -> int:
         """Return number of connectors on this charger."""
@@ -728,3 +734,45 @@ class ChargePoint(cp):
             blocking=False,
         )
         return True
+
+    def set_tag_sensors(self, tag_sensors: Dict):
+        """Set the tag sensors for this charge point."""
+        self._tag_sensors = tag_sensors
+
+    def start_session_tracking(self, id_tag: str, transaction_id: str):
+        """Start tracking a charging session for an ID tag."""
+        if self._tag_sensors and id_tag in self._tag_sensors:
+            from .sensor import ChargingSession
+
+            session = ChargingSession(
+                id_tag=id_tag, transaction_id=transaction_id, start_time=datetime.now()
+            )
+            self._current_session = {
+                "session": session,
+                "id_tag": id_tag,
+                "transaction_id": transaction_id,
+            }
+            self._tag_sensors[id_tag].add_session(session)
+            _LOGGER.info(
+                f"Started tracking session for tag {id_tag}, transaction {transaction_id}"
+            )
+
+    def end_session_tracking(
+        self, transaction_id: str, energy_kwh: float, duration_minutes: int
+    ):
+        """End tracking a charging session and update the tag sensor."""
+        if (
+            self._current_session
+            and self._current_session["transaction_id"] == transaction_id
+            and self._tag_sensors
+        ):
+            id_tag = self._current_session["id_tag"]
+            if id_tag in self._tag_sensors:
+                self._tag_sensors[id_tag].update_session(
+                    transaction_id, energy_kwh, duration_minutes
+                )
+                _LOGGER.info(
+                    f"Ended tracking session for tag {id_tag}, transaction {transaction_id}, energy: {energy_kwh}kWh"
+                )
+
+            self._current_session = None

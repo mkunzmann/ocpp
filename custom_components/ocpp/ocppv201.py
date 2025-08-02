@@ -644,12 +644,27 @@ class ChargePoint(cp):
             self._metrics[csess.transaction_id.value].value = tx_id
             self._metrics[csess.session_time].value = 0
             self._metrics[csess.session_time].unit = UnitOfTime.MINUTES
+
+            # Start session tracking for this ID tag
+            if id_token:
+                id_tag = id_token["id_token"]
+                self.start_session_tracking(id_tag, tx_id)
         else:
             if self._tx_start_time:
                 duration_minutes: int = ((t - self._tx_start_time).seconds + 59) // 60
                 self._metrics[csess.session_time].value = duration_minutes
                 self._metrics[csess.session_time].unit = UnitOfTime.MINUTES
             if event_type == TransactionEventEnumType.ended.value:
+                # End session tracking
+                if id_token:
+                    id_tag = id_token["id_token"]
+                    tx_id = transaction_info.get("transaction_id", "")
+                    energy_kwh = self._metrics[csess.session_energy.value].value or 0.0
+                    duration_minutes = (
+                        self._metrics[csess.session_time.value].value or 0
+                    )
+                    self.end_session_tracking(tx_id, energy_kwh, duration_minutes)
+
                 self._metrics[csess.transaction_id.value].value = ""
                 self._metrics[cstat.id_tag.value].value = ""
 
