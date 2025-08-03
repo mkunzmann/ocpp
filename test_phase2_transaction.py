@@ -183,11 +183,6 @@ class TestChargePoint(ChargePoint):
                             "measurand": Measurand.energy_active_import_register,
                             "unit": UnitOfMeasure.wh,
                         },
-                        {
-                            "value": str(energy_import),
-                            "measurand": Measurand.energy_active_import_register,
-                            "unit": UnitOfMeasure.kwh,
-                        },
                     ],
                 }
             ],
