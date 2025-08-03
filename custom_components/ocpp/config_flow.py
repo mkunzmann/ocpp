@@ -190,10 +190,19 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._data[CONF_CPIDS][-1][self._cp_id][CONF_MONITORED_VARIABLES] = (
                     DEFAULT_MONITORED_VARIABLES
                 )
-                return self.async_update_reload_and_abort(
+
+                # Update the config entry
+                self.hass.config_entries.async_update_entry(
                     self._entry,
-                    data_updates=self._data,
+                    data=self._data,
                 )
+
+                # Create entities for the new charger
+                central_system = self.hass.data[DOMAIN][self._entry.entry_id]
+                if hasattr(central_system, "create_entities_for_charger"):
+                    central_system.create_entities_for_charger(self._cp_id, user_input)
+
+                return self.async_abort(reason="charger_configured")
             else:
                 return await self.async_step_measurands()
 
@@ -219,10 +228,23 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._data[CONF_CPIDS][-1][self._cp_id][CONF_MONITORED_VARIABLES] = (
                     self._measurands
                 )
-                return self.async_update_reload_and_abort(
+
+                # Update the config entry
+                self.hass.config_entries.async_update_entry(
                     self._entry,
-                    data_updates=self._data,
+                    data=self._data,
                 )
+
+                # Create entities for the new charger
+                central_system = self.hass.data[DOMAIN][self._entry.entry_id]
+                if hasattr(central_system, "create_entities_for_charger"):
+                    # Get the charger settings from the data
+                    charger_settings = self._data[CONF_CPIDS][-1][self._cp_id]
+                    central_system.create_entities_for_charger(
+                        self._cp_id, charger_settings
+                    )
+
+                return self.async_abort(reason="charger_configured")
 
         return self.async_show_form(
             step_id="measurands",

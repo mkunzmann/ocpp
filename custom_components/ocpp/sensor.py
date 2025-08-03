@@ -300,6 +300,66 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(entities, False)
     _LOGGER.info("async_add_entities call completed")
 
+    # Store the async_add_entities function for dynamic entity creation
+    if not hasattr(central_system, "_async_add_entities"):
+        central_system._async_add_entities = async_add_entities
+        central_system._hass = hass
+        central_system._entry = entry
+
+    # Add a method to create entities for new chargers
+    def create_entities_for_charger(cp_id, cp_settings):
+        """Create entities for a newly configured charger."""
+        if not hasattr(central_system, "_async_add_entities"):
+            _LOGGER.warning(
+                "Cannot create entities for new charger - async_add_entities not available"
+            )
+            return
+
+        cpid = cp_settings[CONF_CPID]
+        new_entities = []
+
+        SENSORS = []
+        for metric in list(
+            set(
+                cp_settings[CONF_MONITORED_VARIABLES].split(",")
+                + list(HAChargerSession)
+            )
+        ):
+            SENSORS.append(
+                OcppSensorDescription(
+                    key=metric.lower(),
+                    name=metric.replace(".", " "),
+                    metric=metric,
+                )
+            )
+        for metric in list(HAChargerStatuses) + list(HAChargerDetails):
+            SENSORS.append(
+                OcppSensorDescription(
+                    key=metric.lower(),
+                    name=metric.replace(".", " "),
+                    metric=metric,
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                )
+            )
+
+        for ent in SENSORS:
+            cpx = ChargePointMetric(
+                central_system._hass,
+                central_system,
+                cpid,
+                ent,
+            )
+            new_entities.append(cpx)
+
+        if new_entities:
+            _LOGGER.info(
+                f"Creating {len(new_entities)} entities for new charger {cp_id}"
+            )
+            central_system._async_add_entities(new_entities, False)
+
+    # Store the function in the central system for later use
+    central_system.create_entities_for_charger = create_entities_for_charger
+
 
 class ChargePointMetric(RestoreSensor, SensorEntity):
     """Individual sensor for charge point metrics."""
