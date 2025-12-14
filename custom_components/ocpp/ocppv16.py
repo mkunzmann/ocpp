@@ -1136,6 +1136,8 @@ class ChargePoint(cp):
             )
             conn = 1  # conservative fallback
 
+        id_tag_value = self._metrics[(conn, cstat.id_tag.value)].value
+
         # Reset active transaction (global + per-connector)
         self._active_tx[conn] = 0
         self.active_transaction_id = 0
@@ -1157,6 +1159,9 @@ class ChargePoint(cp):
             except Exception:
                 session_kwh = 0.0
             self._metrics[(conn, csess.session_energy.value)].value = session_kwh
+
+        session_value = self._metrics[(conn, csess.session_energy.value)].value
+        self._record_tag_energy(id_tag_value, session_value)
 
         for meas in [
             Measurand.current_import.value,

@@ -14,6 +14,7 @@ from homeassistant.const import STATE_OK, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 import voluptuous as vol
 from websockets import Subprotocol, NegotiationError
 import websockets.server
@@ -26,6 +27,7 @@ from .const import (
     CentralSystemSettings,
     DOMAIN,
     OCPP_2_0,
+    DATA_UPDATED,
     ChargerSystemSettings,
 )
 from .enums import (
@@ -109,6 +111,8 @@ class CentralSystem:
         self.charge_points = {}  # uses cp_id as reference to charger instance
         self.cpids = {}  # dict of {cpid:cp_id}
         self.connections = 0
+        self.tag_energy_totals: dict[str, float] = {}
+        self._tag_energy_entities: set[str] = set()
 
         # Register custom services with home assistant
         self.hass.services.async_register(
@@ -160,6 +164,38 @@ class CentralSystem:
             self.handle_get_diagnostics,
             GDIAG_SERVICE_DATA_SCHEMA,
         )
+
+    def register_tag_energy_entity(self, entity_id: str) -> None:
+        """Track entities that reflect RFID tag energy totals."""
+
+        if entity_id:
+            self._tag_energy_entities.add(entity_id)
+
+    def get_tag_energy_totals(self) -> dict[str, float]:
+        """Return a copy of accumulated RFID tag energy totals."""
+
+        return dict(self.tag_energy_totals)
+
+    def record_tag_energy(self, id_tag: str | None, energy_kwh: float | None) -> None:
+        """Accumulate charged energy for a specific RFID tag."""
+
+        if not id_tag or energy_kwh is None:
+            return
+
+        try:
+            value = float(energy_kwh)
+        except (TypeError, ValueError):
+            return
+
+        if value < 0:
+            return
+
+        current = float(self.tag_energy_totals.get(id_tag, 0.0))
+        total = round(current + value, 3)
+        self.tag_energy_totals[id_tag] = total
+
+        targets = self._tag_energy_entities or None
+        async_dispatcher_send(self.hass, DATA_UPDATED, targets)
 
     @staticmethod
     async def create(hass: HomeAssistant, entry: ConfigEntry):
