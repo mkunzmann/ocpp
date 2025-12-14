@@ -1,6 +1,7 @@
 """Test sensor for ocpp integration."""
 
 import asyncio
+import pytest
 import websockets
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -15,6 +16,7 @@ from custom_components.ocpp.const import CONF_NUM_CONNECTORS, DOMAIN as OCPP_DOM
 
 from .const import (
     MOCK_CONFIG_DATA,
+    CONF_CSID,
     CONF_CPIDS,
     MOCK_CONFIG_CP_APPEND,
     CONF_PORT,
@@ -62,6 +64,10 @@ async def test_sensor(hass, socket_enabled):
         state = hass.states.get(f"sensor.{cpid}_energy_reactive_import_register")
         assert state.attributes.get(ATTR_DEVICE_CLASS) is None
         assert state.attributes.get(ATTR_STATE_CLASS) is None
+
+        tag_energy = hass.states.get(f"sensor.{data[CONF_CSID]}_rfid_energy")
+        assert tag_energy is not None
+        assert float(tag_energy.state) == pytest.approx(0.0)
 
         await ws.close()
 

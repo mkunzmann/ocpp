@@ -667,6 +667,17 @@ class ChargePoint(cp):
             )
         return auth_status
 
+    def _record_tag_energy(self, id_tag: str | None, energy_kwh: float | None) -> None:
+        """Forward charged energy totals to the central system for tracking."""
+
+        try:
+            central = self.hass.data.get(DOMAIN, {}).get(self.entry.entry_id)
+        except Exception:
+            central = None
+
+        if central and hasattr(central, "record_tag_energy"):
+            central.record_tag_energy(id_tag, energy_kwh)
+
     def process_phases(self, data: list[MeasurandValue], connector_id: int = 0):
         """Process per-phase MeterValues and aggregate them into per-connector metrics.
 

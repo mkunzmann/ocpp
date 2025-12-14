@@ -12,16 +12,18 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import CONF_MONITORED_VARIABLES
+from homeassistant.const import CONF_MONITORED_VARIABLES, UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.util import slugify
 
 from .api import CentralSystem
 from .const import (
     CONF_CPID,
     CONF_CPIDS,
+    CONF_CSID,
     CONF_NUM_CONNECTORS,
     DATA_UPDATED,
     DEFAULT_CLASS_UNITS_HA,
@@ -40,11 +42,70 @@ class OcppSensorDescription(SensorEntityDescription):
     metric: str | None = None
 
 
+class RfidTagEnergySensor(RestoreSensor):
+    """Expose accumulated RFID tag energy across all chargers."""
+
+    _attr_has_entity_name = False
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+
+    def __init__(self, hass: HomeAssistant, central_system: CentralSystem, entry):
+        self.hass = hass
+        self.central_system = central_system
+        self.entry = entry
+        slug = slugify(entry.data[CONF_CSID])
+        object_id = f"{slug}_rfid_energy"
+        self.entity_id = f"{SENSOR_DOMAIN}.{object_id}"
+        self._attr_unique_id = f"{DOMAIN}.{entry.entry_id}.rfid_energy"
+        self._attr_name = "RFID tag energy"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.data[CONF_CSID])},
+            name=entry.data[CONF_CSID],
+        )
+        self._attr_native_value = 0.0
+
+    @property
+    def native_value(self):
+        totals = self.central_system.get_tag_energy_totals()
+        total_value = round(sum(totals.values()), 3) if totals else 0.0
+        self._attr_native_value = total_value
+        return self._attr_native_value
+
+    @property
+    def extra_state_attributes(self):
+        totals = self.central_system.get_tag_energy_totals()
+        if not totals:
+            return {}
+        return {"tag_energy_kwh": dict(sorted(totals.items()))}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
+        self.central_system.register_tag_energy_entity(self.entity_id)
+
+        if restored := await self.async_get_last_sensor_data():
+            self._attr_native_value = restored.native_value
+
+        @callback
+        def _maybe_update(active_lookup=None):
+            if active_lookup is None or self.entity_id in active_lookup:
+                self.async_schedule_update_ha_state(True)
+
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, DATA_UPDATED, _maybe_update)
+        )
+
+        self.async_schedule_update_ha_state(True)
+
+
 async def async_setup_entry(hass, entry, async_add_devices):
     """Configure the sensor platform."""
     central_system = hass.data[DOMAIN][entry.entry_id]
-    entities: list[ChargePointMetric] = []
+    entities: list[SensorEntity] = []
     ent_reg = er.async_get(hass)
+
+    entities.append(RfidTagEnergySensor(hass, central_system, entry))
 
     # setup all chargers added to config
     for charger in entry.data[CONF_CPIDS]:

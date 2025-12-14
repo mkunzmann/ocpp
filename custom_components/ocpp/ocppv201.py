@@ -891,6 +891,9 @@ class ChargePoint(cp):
                     (global_idx, csess.session_time.value)
                 ].unit = UnitOfTime.MINUTES
             if event_type == TransactionEventEnumType.ended.value:
+                tag_value = self._metrics[(global_idx, cstat.id_tag.value)].value
+                session_value = self._metrics[(global_idx, csess.session_energy.value)].value
+                self._record_tag_energy(tag_value, session_value)
                 self._metrics[(global_idx, csess.transaction_id.value)].value = ""
                 self._metrics[(global_idx, cstat.id_tag.value)].value = ""
                 self._tx_start_time.pop(global_idx, None)
