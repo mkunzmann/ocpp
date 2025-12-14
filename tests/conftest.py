@@ -1,12 +1,15 @@
 """Global fixtures for ocpp integration."""
 
 import asyncio
+import importlib.util
 from unittest.mock import patch
 
 import pytest
-import websockets
 
-pytest_plugins = "pytest_homeassistant_custom_component"
+if importlib.util.find_spec("pytest_homeassistant_custom_component"):
+    pytest_plugins = "pytest_homeassistant_custom_component"
+else:
+    pytest_plugins = []
 
 
 @pytest.fixture(autouse=True)
@@ -35,6 +38,7 @@ def skip_notifications_fixture():
 @pytest.fixture(name="bypass_get_data")
 def bypass_get_data_fixture():
     """Skip calls to get data from API."""
+    websockets = pytest.importorskip("websockets")
     future = asyncio.Future()
     future.set_result(websockets.asyncio.server.Server)
     with (

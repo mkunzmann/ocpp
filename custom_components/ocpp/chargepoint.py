@@ -187,6 +187,7 @@ class ChargePoint(cp):
         self.received_boot_notification = False
         self.post_connect_success = False
         self.tasks = None
+        self._last_recorded_transaction = None
         self._charger_reports_session_energy = False
         self._metrics = defaultdict(lambda: Metric(None, None))
         self._metrics[cdet.identifier.value].value = id
@@ -197,6 +198,12 @@ class ChargePoint(cp):
         self._metrics[cstat.reconnects.value].value = 0
         alphabet = string.ascii_uppercase + string.digits
         self._remote_id_tag = "".join(secrets.choice(alphabet) for i in range(20))
+
+    @property
+    def central_system(self):
+        """Return the central system instance for this charge point."""
+
+        return self.hass.data.get(DOMAIN, {}).get(self.entry.entry_id)
 
     async def get_number_of_connectors(self) -> int:
         """Return number of connectors on this charger."""
@@ -689,6 +696,35 @@ class ChargePoint(cp):
     def get_metric(self, measurand: str):
         """Return last known value for given measurand."""
         return self._metrics[measurand].value
+
+    def _record_session_energy_usage(self):
+        """Store the session energy against the RFID tag in the central system."""
+
+        session_energy = self._metrics[csess.session_energy.value].value
+        meter_start = self._metrics[csess.meter_start.value].value
+        transaction_id = self._metrics[csess.transaction_id.value].value
+        id_tag = self._metrics[cstat.id_tag.value].value
+        central = self.central_system
+
+        if central is None:
+            return
+
+        if not id_tag or session_energy is None:
+            return
+
+        if transaction_id == self._last_recorded_transaction:
+            return
+
+        try:
+            if meter_start is not None:
+                adjusted_energy = float(session_energy) - float(meter_start)
+                if adjusted_energy >= 0:
+                    session_energy = adjusted_energy
+        except (TypeError, ValueError):
+            pass
+
+        central.record_tag_energy(id_tag, session_energy)
+        self._last_recorded_transaction = transaction_id
 
     def get_ha_metric(self, measurand: str):
         """Return last known value in HA for given measurand."""

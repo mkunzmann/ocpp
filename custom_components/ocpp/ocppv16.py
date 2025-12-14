@@ -741,9 +741,14 @@ class ChargePoint(cp):
     def on_start_transaction(self, connector_id, id_tag, meter_start, **kwargs):
         """Handle a Start Transaction request."""
 
+        # Reset per-transaction flags to avoid leaking state between sessions.
+        self._charger_reports_session_energy = False
+
         auth_status = self.get_authorization_status(id_tag)
         if auth_status == AuthorizationStatus.accepted.value:
-            self.active_transaction_id = int(time.time())
+            # Use a high resolution timestamp to avoid reusing transaction ids
+            # when multiple chargers start sessions within the same second.
+            self.active_transaction_id = int(time.time() * 1000)
             self._metrics[cstat.id_tag.value].value = id_tag
             self._metrics[cstat.stop_reason.value].value = ""
             self._metrics[csess.transaction_id.value].value = self.active_transaction_id
@@ -777,6 +782,7 @@ class ChargePoint(cp):
             self._metrics[csess.session_energy.value].value = int(
                 meter_stop
             ) / 1000 - float(self._metrics[csess.meter_start.value].value)
+        self._record_session_energy_usage()
         if Measurand.current_import.value in self._metrics:
             self._metrics[Measurand.current_import.value].value = 0
         if Measurand.power_active_import.value in self._metrics:
