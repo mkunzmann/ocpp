@@ -650,6 +650,7 @@ class ChargePoint(cp):
                 self._metrics[csess.session_time].value = duration_minutes
                 self._metrics[csess.session_time].unit = UnitOfTime.MINUTES
             if event_type == TransactionEventEnumType.ended.value:
+                self._record_session_energy_usage()
                 self._metrics[csess.transaction_id.value].value = ""
                 self._metrics[cstat.id_tag.value].value = ""
 

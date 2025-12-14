@@ -6,6 +6,7 @@ import json
 import logging
 import ssl
 
+from collections import defaultdict
 from functools import partial
 from homeassistant.config_entries import ConfigEntry, SOURCE_INTEGRATION_DISCOVERY
 from homeassistant.const import STATE_OK, STATE_UNAVAILABLE
@@ -102,6 +103,7 @@ class CentralSystem:
         self.charge_points = {}  # uses cp_id as reference to charger instance
         self.cpids = {}  # dict of {cpid:cp_id}
         self.connections = 0
+        self.tag_energy = defaultdict(float)
 
         # Register custom services with home assistant
         self.hass.services.async_register(
@@ -281,6 +283,26 @@ class CentralSystem:
         if cp_id in self.charge_points:
             return self.charge_points[cp_id]._metrics[measurand].value
         return None
+
+    def record_tag_energy(self, id_tag: str, session_energy_kwh: float):
+        """Accumulate energy usage per RFID tag across all chargers."""
+
+        try:
+            energy = float(session_energy_kwh)
+        except (TypeError, ValueError):
+            return
+
+        if not id_tag or energy < 0:
+            return
+
+        self.tag_energy[id_tag] += energy
+
+    def get_tag_energy(self, id_tag: str | None = None):
+        """Return aggregated energy usage for one tag or all tags."""
+
+        if id_tag is not None:
+            return self.tag_energy.get(id_tag, 0.0)
+        return dict(self.tag_energy)
 
     def del_metric(self, id: str, measurand: str):
         """Set given measurand to None."""
